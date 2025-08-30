@@ -3,19 +3,14 @@ import os, time, json, hashlib
 import pygame
 from aurion_ui import (
     open_fullscreen_on, load_font, make_scanlines, make_tint, make_noise_frames,
-    blit_glow_halo, fade_from_black, play_splash_8s, find_album_json, load_album, fmt_time
+    fade_from_black, play_splash_8s, find_album_json, load_album, fmt_time
 )
 
-# Which HDMI for the LEFT/TEXT screen
-SCREEN_INDEX = "0"
-
-# Colors
+SCREEN_INDEX = "0"  # Left HDMI
 BLUE  = (150,200,255)
 RED   = (220,40,40)
 WHITE = (230,230,230)
 BLACK = (0,0,0)
-
-# Bookmark file
 BOOKMARKS_PATH = "/home/pi/aurion/config/bookmarks.json"
 
 # ---------- bookmarks ----------
@@ -32,18 +27,14 @@ def _save_bookmarks(data):
         json.dump(data, f, indent=2)
 
 def _album_key(meta, album_folder):
-    # Prefer stable id from album.json; else hash the folder path
     if "album_id" in meta:
         return meta["album_id"]
     return hashlib.sha1(album_folder.encode("utf-8")).hexdigest()[:16]
 
-# ---------- idle (splash → fade → welcome) until SD detected ----------
+# ---------- idle (splash → fade → welcome) ----------
 def run_idle_until_sd(greeting="Commander"):
-    # 1) Open our fullscreen first (black), so the splash returns smoothly to it
     screen, clock = open_fullscreen_on(SCREEN_INDEX)
     screen.fill(BLACK); pygame.display.flip()
-
-    # 2) Play hidden splash on top, then fade from black into the idle scene
     play_splash_8s()
     fade_from_black(screen, clock, ms=500)
 
@@ -59,19 +50,14 @@ def run_idle_until_sd(greeting="Commander"):
     tint  = make_tint((sw, sh))
     noise = make_noise_frames((sw, sh))
 
-    frame = 0
-    letters = 0
-    blink = True
-    ni = 0
-    last_poll = 0.0
+    frame = 0; letters = 0; blink = True; ni = 0; last_poll = 0.0
     finished_welcome = False
 
     running = True
     while running:
         for e in pygame.event.get():
             if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-                pygame.quit()
-                return None
+                pygame.quit(); return None
 
         frame += 1
         if letters < len(full_text) and frame % frames_per_letter == 0:
@@ -81,48 +67,39 @@ def run_idle_until_sd(greeting="Commander"):
         if frame % blink_frames == 0:
             blink = not blink
 
-        # Poll for SD every 0.5s
+        # poll SD
         now = time.time()
         if now - last_poll >= 0.5:
             last_poll = now
             jp = find_album_json()
             if jp:
-                pygame.quit()
-                return jp
+                pygame.quit(); return jp
 
-        # Draw
+        # draw
         screen.fill(BLACK)
-
-        # Line 1: Welcome (halo glow, no bars), typing
         t1 = renders[letters]
         c1 = (sw // 2, sh // 2 - 60)
-        blit_glow_halo(screen, t1, c1, radius=4, copies=24, alpha=40)
         screen.blit(t1, t1.get_rect(center=c1))
 
-        # Line 2: Insert Cartridge (appears only after welcome completes)
         if finished_welcome and blink:
             t2 = font.render("Insert Cartridge", True, RED)
             c2 = (sw // 2, sh // 2 + 40)
-            blit_glow_halo(screen, t2, c2, radius=4, copies=24, alpha=40)
             screen.blit(t2, t2.get_rect(center=c2))
 
-        # Overlays
-        screen.blit(scan, (0, 0))
-        screen.blit(noise[ni], (0, 0)); ni = (ni + 1) % len(noise)
-        screen.blit(tint, (0, 0))
+        screen.blit(scan, (0,0))
+        screen.blit(noise[ni], (0,0)); ni = (ni+1) % len(noise)
+        screen.blit(tint, (0,0))
 
         pygame.display.flip()
         clock.tick(30)
 
-# ---------- build track list from titles + numbered files ----------
+# ---------- build track list ----------
 def pair_titles_with_files(base, main_titles, bonus_titles):
     files = sorted([f for f in os.listdir(base) if f.lower().endswith(".mp3")])
     tracks = []
-    # main
     for i, title in enumerate(main_titles):
         fn = files[i] if i < len(files) else ""
         tracks.append({"title": title, "filename": fn})
-    # bonus
     off = len(main_titles)
     for i, title in enumerate(bonus_titles):
         idx = off + i
@@ -130,7 +107,7 @@ def pair_titles_with_files(base, main_titles, bonus_titles):
         tracks.append({"title": title, "filename": fn})
     return tracks, len(main_titles)
 
-# ---------- album UI + audio ----------
+# ---------- album UI ----------
 def run_album_ui(json_path):
     data   = load_album(json_path)
     artist = data.get("artist","")
@@ -140,11 +117,8 @@ def run_album_ui(json_path):
     main_titles  = data.get("tracks", [])
     bonus_titles = data.get("bonus",  [])
     tracks, main_count = pair_titles_with_files(base, main_titles, bonus_titles)
-    if not tracks:
-        tracks = [{"title":"(No tracks)","filename":""}]
-        main_count = 0
+    if not tracks: tracks=[{"title":"(No tracks)","filename":""}]; main_count=0
 
-    # Screen
     screen, clock = open_fullscreen_on(SCREEN_INDEX)
     sw, sh = screen.get_size()
     font_big   = load_font(44)
@@ -154,134 +128,95 @@ def run_album_ui(json_path):
     noise = make_noise_frames((sw, sh), dots=500, alpha=18)
     ni = 0
 
-    # Audio
     pygame.mixer.init(frequency=44100, channels=2)
 
     def play_track(i, start_sec=0):
         fn = tracks[i].get("filename","")
-        if not fn:
-            return False
+        if not fn: return False
         path = os.path.join(base, fn)
         try:
             pygame.mixer.music.load(path)
             if start_sec > 0:
-                try:
-                    pygame.mixer.music.play(start=start_sec)
-                except Exception:
-                    pygame.mixer.music.play()
-            else:
-                pygame.mixer.music.play()
+                try: pygame.mixer.music.play(start=start_sec)
+                except Exception: pygame.mixer.music.play()
+            else: pygame.mixer.music.play()
             return True
         except Exception as e:
-            print("[aurion] audio load error:", e)
-            return False
+            print("[aurion] audio load error:", e); return False
 
-    # Bookmarks (resume)
     bmarks = _load_bookmarks()
     key    = _album_key(data, base)
-    idx = 0
-    resume_sec = 0
+    idx = 0; resume_sec = 0
     if key in bmarks:
-        idx = min(max(0, bmarks[key].get("track", 0)), len(tracks)-1)
-        resume_sec = max(0, int(bmarks[key].get("pos", 0)))
+        idx = min(max(0, bmarks[key].get("track",0)), len(tracks)-1)
+        resume_sec = max(0, int(bmarks[key].get("pos",0)))
         print(f"[aurion] Resuming {key} at track {idx+1}, {resume_sec}s")
 
     play_track(idx, resume_sec)
-    paused = False
-    album_ended = False
-    start_wall = time.time() - resume_sec  # wall-clock fallback for elapsed
+    paused = False; album_ended = False
+    start_wall = time.time() - resume_sec
 
     def current_elapsed():
         ms = pygame.mixer.music.get_pos()
         return int(ms/1000) if ms >= 0 else int(time.time() - start_wall)
 
-    running = True
+    running=True
     while running:
         for e in pygame.event.get():
-            if e.type == pygame.KEYDOWN:
-                if e.key == pygame.K_ESCAPE:
-                    running = False
-                elif e.key == pygame.K_SPACE:
-                    # Play/Pause, or kick into bonus after main end
-                    if album_ended and paused and len(tracks) > main_count:
-                        idx = main_count
-                        play_track(idx, 0)
-                        start_wall = time.time()
-                        paused = False
-                        album_ended = False
+            if e.type==pygame.KEYDOWN:
+                if e.key==pygame.K_ESCAPE: running=False
+                elif e.key==pygame.K_SPACE:
+                    if album_ended and paused and len(tracks)>main_count:
+                        idx=main_count; play_track(idx,0)
+                        start_wall=time.time(); paused=False; album_ended=False
                     else:
                         if paused:
-                            pygame.mixer.music.unpause()
-                            paused = False
-                            start_wall = time.time() - current_elapsed()
+                            pygame.mixer.music.unpause(); paused=False
+                            start_wall=time.time()-current_elapsed()
                         else:
-                            pygame.mixer.music.pause()
-                            paused = True
-                elif e.key == pygame.K_s:
-                    # STOP = save bookmark and stop
-                    pos = current_elapsed()
-                    bmarks[key] = {"track": idx, "pos": pos}
-                    _save_bookmarks(bmarks)
-                    pygame.mixer.music.stop()
-                    paused = True
-                elif e.key == pygame.K_RIGHT and idx < len(tracks)-1:
-                    idx += 1
-                    play_track(idx, 0); start_wall = time.time(); album_ended = False
-                elif e.key == pygame.K_LEFT and idx > 0:
-                    idx -= 1
-                    play_track(idx, 0); start_wall = time.time(); album_ended = False
+                            pygame.mixer.music.pause(); paused=True
+                elif e.key==pygame.K_s:
+                    pos=current_elapsed(); bmarks[key]={"track":idx,"pos":pos}
+                    _save_bookmarks(bmarks); pygame.mixer.music.stop(); paused=True
+                elif e.key==pygame.K_RIGHT and idx<len(tracks)-1:
+                    idx+=1; play_track(idx,0); start_wall=time.time(); album_ended=False
+                elif e.key==pygame.K_LEFT and idx>0:
+                    idx-=1; play_track(idx,0); start_wall=time.time(); album_ended=False
 
-        # Track finished naturally?
         if not paused and not pygame.mixer.music.get_busy():
             if idx+1 < main_count:
-                idx += 1; play_track(idx, 0); start_wall = time.time()
+                idx+=1; play_track(idx,0); start_wall=time.time()
             elif idx+1 == main_count:
-                # finished last MAIN track → stop & wait for PLAY to enter bonus
                 if not album_ended:
-                    album_ended = True
-                    pygame.mixer.music.stop()
-                    paused = True
+                    album_ended=True; pygame.mixer.music.stop(); paused=True
             else:
-                # in bonus: auto-advance
                 if idx < len(tracks)-1:
-                    idx += 1; play_track(idx, 0); start_wall = time.time()
+                    idx+=1; play_track(idx,0); start_wall=time.time()
 
-        # UI
-        elapsed = current_elapsed()
-        title = tracks[idx].get("title", "(untitled)")
-        line1 = f"{idx+1}. {title}  {fmt_time(elapsed)}"
+        elapsed=current_elapsed()
+        title=tracks[idx].get("title","(untitled)")
+        line1=f"{idx+1}. {title}  {fmt_time(elapsed)}"
 
         screen.fill(BLACK)
-        t1 = font_big.render(line1, True, BLUE)
-        c1 = (sw//2, sh//2 - 60)
-        blit_glow_halo(screen, t1, c1, radius=4, copies=24, alpha=40)
-        screen.blit(t1, t1.get_rect(center=c1))
+        t1=font_big.render(line1,True,BLUE)
+        screen.blit(t1,t1.get_rect(center=(sw//2,sh//2-60)))
+        t2=font_small.render(album,True,WHITE)
+        screen.blit(t2,t2.get_rect(center=(sw//2,sh//2)))
+        t3=font_small.render(artist,True,WHITE)
+        screen.blit(t3,t3.get_rect(center=(sw//2,sh//2+48)))
 
-        t2 = font_small.render(album,  True, WHITE)
-        screen.blit(t2, t2.get_rect(center=(sw//2, sh//2)))
+        if album_ended and paused and len(tracks)>main_count:
+            hint=font_small.render("Main complete — press PLAY for bonus tracks",True,RED)
+            screen.blit(hint,hint.get_rect(center=(sw//2,sh//2+110)))
 
-        t3 = font_small.render(artist, True, WHITE)
-        screen.blit(t3, t3.get_rect(center=(sw//2, sh//2 + 48)))
+        screen.blit(scan,(0,0))
+        screen.blit(noise[ni],(0,0)); ni=(ni+1)%len(noise)
+        screen.blit(tint,(0,0))
+        pygame.display.flip(); clock.tick(30)
 
-        if album_ended and paused and len(tracks) > main_count:
-            hint = font_small.render("Main complete — press PLAY for bonus tracks", True, RED)
-            screen.blit(hint, hint.get_rect(center=(sw//2, sh//2 + 110)))
+    pos=current_elapsed(); bmarks[key]={"track":idx,"pos":pos}
+    _save_bookmarks(bmarks); pygame.mixer.music.stop(); pygame.quit()
 
-        screen.blit(make_scanlines((sw, sh)), (0,0))
-        screen.blit(noise[ni], (0,0)); ni = (ni+1) % len(noise)
-        screen.blit(tint, (0,0))
-        pygame.display.flip()
-        clock.tick(30)
-
-    # Save bookmark on exit
-    pos = current_elapsed()
-    bmarks[key] = {"track": idx, "pos": pos}
-    _save_bookmarks(bmarks)
-    pygame.mixer.music.stop()
-    pygame.quit()
-
-# ---------- main ----------
-if __name__ == "__main__":
-    jp = run_idle_until_sd(greeting="Commander")
-    if jp:
-        run_album_ui(jp)
+if __name__=="__main__":
+    jp=run_idle_until_sd(greeting="Commander")
+    if jp: run_album_ui(jp)
