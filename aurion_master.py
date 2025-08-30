@@ -1,22 +1,21 @@
-# /home/pi/aurion/aurion_master.py
-import multiprocessing
-import aurion_left
-import aurion_right
+import multiprocessing as mp
+import aurion_left, aurion_right
 
-def run_left():
-    aurion_left.run_idle_until_sd(greeting="Commander")
+def run_left(album_q):
+    aurion_left.run_left_worker(album_q, greeting="Commander")
 
-def run_right():
-    aurion_right.run_idle_until_sd(greeting="Commander")
+def run_right(album_q):
+    aurion_right.run_right_worker(album_q, greeting="Commander")
 
 if __name__ == "__main__":
-    # Run left + right as separate processes
-    p_left = multiprocessing.Process(target=run_left)
-    p_right = multiprocessing.Process(target=run_right)
+    mp.set_start_method("spawn")  # safer on some Pi builds
+    album_q = mp.Queue()
+
+    p_left  = mp.Process(target=run_left,  args=(album_q,))
+    p_right = mp.Process(target=run_right, args=(album_q,))
 
     p_left.start()
     p_right.start()
 
-    # Wait until they finish
     p_left.join()
     p_right.join()
