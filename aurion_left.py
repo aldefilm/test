@@ -3,7 +3,8 @@ import os, time, json, hashlib
 import pygame
 from aurion_ui import (
     open_fullscreen_on, load_font, make_scanlines, make_tint, make_noise_frames,
-    fade_from_black, play_splash_8s, find_album_json, load_album, fmt_time
+    fade_from_black, play_splash_embedded, play_splash_8s,
+    find_album_json, load_album, fmt_time
 )
 
 SCREEN_INDEX = "0"  # Left HDMI
@@ -11,6 +12,7 @@ BLUE  = (150,200,255)
 RED   = (220,40,40)
 WHITE = (230,230,230)
 BLACK = (0,0,0)
+
 BOOKMARKS_PATH = "/home/pi/aurion/config/bookmarks.json"
 
 # ---------- bookmarks ----------
@@ -33,10 +35,18 @@ def _album_key(meta, album_folder):
 
 # ---------- idle (splash → fade → welcome) ----------
 def run_idle_until_sd(greeting="Commander"):
+    # Open our fullscreen window first (black)
     screen, clock = open_fullscreen_on(SCREEN_INDEX)
     screen.fill(BLACK); pygame.display.flip()
-    play_splash_8s()
-    fade_from_black(screen, clock, ms=500)
+
+    # Try embedded splash (seamless). If cvlc/X11 unavailable, fall back to external.
+    try:
+        play_splash_embedded(screen, clock, stop_seconds=8)
+    except Exception:
+        play_splash_8s()
+
+    # Fade in to the idle UI
+    fade_from_black(screen, clock, ms=300)
 
     sw, sh = screen.get_size()
     font = load_font(48)
@@ -139,7 +149,8 @@ def run_album_ui(json_path):
             if start_sec > 0:
                 try: pygame.mixer.music.play(start=start_sec)
                 except Exception: pygame.mixer.music.play()
-            else: pygame.mixer.music.play()
+            else:
+                pygame.mixer.music.play()
             return True
         except Exception as e:
             print("[aurion] audio load error:", e); return False
