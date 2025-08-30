@@ -3,9 +3,9 @@ import os, json, glob, random, shutil, subprocess
 import pygame
 
 # ----- PATHS -----
-AURION_ROOT = "/home/aurion"
+AURION_ROOT = "/home/pi/aurion"
 ASSETS      = os.path.join(AURION_ROOT, "assets")
-FONT_PATH   = os.path.join(ASSETS, "fonts", "curved-16-segment.otf")
+FONT_PATH   = os.path.join(ASSETS, "fonts", "AurionFont.ttf")
 SPLASH_MP4  = os.path.join(ASSETS, "splash.mp4")
 
 # ----- DISPLAY -----
@@ -54,7 +54,7 @@ def make_noise_frames(size, frames=3, dots=600, alpha=22):
     return out
 
 # ----- FADE -----
-def fade_from_black(screen, clock, ms=500):
+def fade_from_black(screen, clock, ms=300):
     """Quick fade from black to scene for a smooth post-splash transition."""
     w, h = screen.get_size()
     cover = pygame.Surface((w, h))
@@ -66,11 +66,11 @@ def fade_from_black(screen, clock, ms=500):
         pygame.display.flip()
         clock.tick(30)
 
-# ----- SPLASH (8s, hidden VLC/OMX, smooth return) -----
+# ----- SPLASH HELPERS -----
 def play_splash_8s():
     """
-    Play splash up to 8s without showing a VLC window/OSD.
-    Call AFTER you've opened your Pygame screen (black background).
+    Play splash up to 8s using an external player (no UI/OSD).
+    Fallback when we can't embed into the window.
     """
     if not os.path.isfile(SPLASH_MP4):
         return
@@ -79,10 +79,10 @@ def play_splash_8s():
         subprocess.run(
             [
                 "cvlc",
-                "--intf", "dummy",            # no VLC UI
+                "--intf", "dummy",
                 "--no-osd",
                 "--no-video-title-show",
-                "--video-on-top",             # on top of your black Pygame screen
+                "--no-tty",
                 "--fullscreen",
                 "--start-time=0",
                 "--stop-time=8",
@@ -95,7 +95,7 @@ def play_splash_8s():
         )
     elif shutil.which("omxplayer"):
         p = subprocess.Popen(
-            ["omxplayer", "--no-osd", "--aspect-mode", "fill", SPLASH_MP4],
+            ["omxplayer", "--no-osd", "--layer", "10000", "--aspect-mode", "fill", SPLASH_MP4],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         try:
@@ -106,6 +106,53 @@ def play_splash_8s():
             except subprocess.TimeoutExpired: pass
     else:
         print("[aurion] No cvlc/omxplayer found; skipping splash.")
+
+def play_splash_embedded(screen, clock, stop_seconds=8):
+    """
+    Render the splash video directly into the existing Pygame window (seamless).
+    Requires X11 and 'cvlc'. Falls back to external player if unavailable.
+    """
+    if not os.path.isfile(SPLASH_MP4):
+        return
+
+    # Get X11 window id to embed into
+    xid = None
+    try:
+        info = pygame.display.get_wm_info()
+        xid = info.get("window")
+    except Exception:
+        xid = None
+
+    if xid and shutil.which("cvlc"):
+        proc = subprocess.Popen(
+            [
+                "cvlc",
+                "--intf", "dummy",
+                "--no-osd",
+                "--no-video-title-show",
+                f"--drawable-xid={xid}",
+                "--start-time=0",
+                f"--stop-time={int(stop_seconds)}",
+                "--play-and-exit",
+                SPLASH_MP4,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # keep the window alive & responsive while VLC draws
+        t0 = pygame.time.get_ticks()
+        while proc.poll() is None:
+            for e in pygame.event.get():
+                if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+                    proc.terminate()
+                    return
+            pygame.display.flip()
+            clock.tick(30)
+            if (pygame.time.get_ticks() - t0) > int((stop_seconds + 0.5) * 1000):
+                break
+    else:
+        # Fallback to non-embedded playback
+        play_splash_8s()
 
 # ----- SD / ALBUM HELPERS -----
 MOUNT_GUESS = ["/media/pi/*", "/media/*/*", "/mnt/*"]
