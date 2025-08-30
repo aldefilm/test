@@ -12,7 +12,6 @@ BLUE  = (150,200,255)
 RED   = (220,40,40)
 WHITE = (230,230,230)
 BLACK = (0,0,0)
-
 BOOKMARKS_PATH = "/home/pi/aurion/config/bookmarks.json"
 
 # ---------- bookmarks ----------
@@ -39,13 +38,13 @@ def run_idle_until_sd(greeting="Commander"):
     screen, clock = open_fullscreen_on(SCREEN_INDEX)
     screen.fill(BLACK); pygame.display.flip()
 
-    # Try embedded splash (seamless). If cvlc/X11 unavailable, fall back to external.
+    # Embedded splash (no flicker). Fallback to external if needed.
     try:
         play_splash_embedded(screen, clock, stop_seconds=8)
     except Exception:
         play_splash_8s()
 
-    # Fade in to the idle UI
+    # Fade in to idle UI
     fade_from_black(screen, clock, ms=300)
 
     sw, sh = screen.get_size()
@@ -66,8 +65,13 @@ def run_idle_until_sd(greeting="Commander"):
     running = True
     while running:
         for e in pygame.event.get():
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-                pygame.quit(); return None
+            if e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_ESCAPE:
+                    pygame.quit(); return None
+                elif e.key == pygame.K_d:  # DEV: press 'D' to force local album
+                    os.environ["AURION_DEV_ALBUM"] = "/home/pi/aurion/dev_album"
+                    pygame.quit()
+                    return os.path.join("/home/pi/aurion/dev_album", "album.json")
 
         frame += 1
         if letters < len(full_text) and frame % frames_per_letter == 0:
@@ -77,7 +81,7 @@ def run_idle_until_sd(greeting="Commander"):
         if frame % blink_frames == 0:
             blink = not blink
 
-        # poll SD
+        # poll SD every 0.5s
         now = time.time()
         if now - last_poll >= 0.5:
             last_poll = now
@@ -228,6 +232,14 @@ def run_album_ui(json_path):
     pos=current_elapsed(); bmarks[key]={"track":idx,"pos":pos}
     _save_bookmarks(bmarks); pygame.mixer.music.stop(); pygame.quit()
 
+# ---------- worker for master ----------
+def run_left_worker(album_q, greeting="Commander"):
+    jp = run_idle_until_sd(greeting=greeting)
+    if jp and album_q is not None:
+        try: album_q.put(jp, block=False)
+        except Exception: pass
+    if jp:
+        run_album_ui(jp)
+
 if __name__=="__main__":
-    jp=run_idle_until_sd(greeting="Commander")
-    if jp: run_album_ui(jp)
+    run_left_worker(album_q=None, greeting="Commander")
