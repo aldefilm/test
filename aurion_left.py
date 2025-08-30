@@ -3,7 +3,7 @@ import os, time, json, hashlib
 import pygame
 from aurion_ui import (
     open_fullscreen_on, load_font, make_scanlines, make_tint, make_noise_frames,
-    blit_glow, play_splash_8s, find_album_json, load_album, fmt_time
+    blit_glow_halo, fade_from_black, play_splash_8s, find_album_json, load_album, fmt_time
 )
 
 # Which HDMI for the LEFT/TEXT screen
@@ -32,18 +32,18 @@ def _save_bookmarks(data):
         json.dump(data, f, indent=2)
 
 def _album_key(meta, album_folder):
-    # Prefer a stable id from album.json; else hash the folder path
+    # Prefer stable id from album.json; else hash the folder path
     if "album_id" in meta:
         return meta["album_id"]
     return hashlib.sha1(album_folder.encode("utf-8")).hexdigest()[:16]
 
-# ---------- idle (splash -> welcome) until SD detected ----------
+# ---------- idle (splash → fade → welcome) until SD detected ----------
 def run_idle_until_sd(greeting="Commander"):
-    # 1) Open Pygame first (black background), so the splash returns cleanly to it
+    # 1) Open our fullscreen first (black), so the splash returns smoothly to it
     screen, clock = open_fullscreen_on(SCREEN_INDEX)
-    screen.fill((0,0,0)); pygame.display.flip()
+    screen.fill(BLACK); pygame.display.flip()
 
-    # 2) Play hidden splash ON TOP, then fade into text
+    # 2) Play hidden splash on top, then fade from black into the idle scene
     play_splash_8s()
     fade_from_black(screen, clock, ms=500)
 
@@ -70,7 +70,8 @@ def run_idle_until_sd(greeting="Commander"):
     while running:
         for e in pygame.event.get():
             if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-                pygame.quit(); return None
+                pygame.quit()
+                return None
 
         frame += 1
         if letters < len(full_text) and frame % frames_per_letter == 0:
@@ -80,30 +81,38 @@ def run_idle_until_sd(greeting="Commander"):
         if frame % blink_frames == 0:
             blink = not blink
 
-        # poll for SD ...
-        # (your existing poll code here)
+        # Poll for SD every 0.5s
+        now = time.time()
+        if now - last_poll >= 0.5:
+            last_poll = now
+            jp = find_album_json()
+            if jp:
+                pygame.quit()
+                return jp
 
-        # draw
-        screen.fill((0,0,0))
+        # Draw
+        screen.fill(BLACK)
+
+        # Line 1: Welcome (halo glow, no bars), typing
         t1 = renders[letters]
         c1 = (sw // 2, sh // 2 - 60)
-        # halo glow (no bars), then main text
         blit_glow_halo(screen, t1, c1, radius=4, copies=24, alpha=40)
         screen.blit(t1, t1.get_rect(center=c1))
 
-        # Only show red AFTER welcome is fully typed
+        # Line 2: Insert Cartridge (appears only after welcome completes)
         if finished_welcome and blink:
             t2 = font.render("Insert Cartridge", True, RED)
             c2 = (sw // 2, sh // 2 + 40)
             blit_glow_halo(screen, t2, c2, radius=4, copies=24, alpha=40)
             screen.blit(t2, t2.get_rect(center=c2))
 
-        screen.blit(scan, (0,0))
-        screen.blit(noise[ni], (0,0)); ni = (ni+1) % len(noise)
-        screen.blit(tint, (0,0))
+        # Overlays
+        screen.blit(scan, (0, 0))
+        screen.blit(noise[ni], (0, 0)); ni = (ni + 1) % len(noise)
+        screen.blit(tint, (0, 0))
+
         pygame.display.flip()
         clock.tick(30)
-
 
 # ---------- build track list from titles + numbered files ----------
 def pair_titles_with_files(base, main_titles, bonus_titles):
@@ -135,7 +144,7 @@ def run_album_ui(json_path):
         tracks = [{"title":"(No tracks)","filename":""}]
         main_count = 0
 
-    # screen
+    # Screen
     screen, clock = open_fullscreen_on(SCREEN_INDEX)
     sw, sh = screen.get_size()
     font_big   = load_font(44)
@@ -145,7 +154,7 @@ def run_album_ui(json_path):
     noise = make_noise_frames((sw, sh), dots=500, alpha=18)
     ni = 0
 
-    # audio
+    # Audio
     pygame.mixer.init(frequency=44100, channels=2)
 
     def play_track(i, start_sec=0):
@@ -167,7 +176,7 @@ def run_album_ui(json_path):
             print("[aurion] audio load error:", e)
             return False
 
-    # bookmarks (resume)
+    # Bookmarks (resume)
     bmarks = _load_bookmarks()
     key    = _album_key(data, base)
     idx = 0
@@ -237,7 +246,7 @@ def run_album_ui(json_path):
                 if idx < len(tracks)-1:
                     idx += 1; play_track(idx, 0); start_wall = time.time()
 
-        # draw UI
+        # UI
         elapsed = current_elapsed()
         title = tracks[idx].get("title", "(untitled)")
         line1 = f"{idx+1}. {title}  {fmt_time(elapsed)}"
@@ -245,7 +254,7 @@ def run_album_ui(json_path):
         screen.fill(BLACK)
         t1 = font_big.render(line1, True, BLUE)
         c1 = (sw//2, sh//2 - 60)
-        blit_glow(screen, t1, c1, layers=((1.3,50),(1.6,25)))
+        blit_glow_halo(screen, t1, c1, radius=4, copies=24, alpha=40)
         screen.blit(t1, t1.get_rect(center=c1))
 
         t2 = font_small.render(album,  True, WHITE)
@@ -258,13 +267,13 @@ def run_album_ui(json_path):
             hint = font_small.render("Main complete — press PLAY for bonus tracks", True, RED)
             screen.blit(hint, hint.get_rect(center=(sw//2, sh//2 + 110)))
 
-        screen.blit(scan, (0,0))
+        screen.blit(make_scanlines((sw, sh)), (0,0))
         screen.blit(noise[ni], (0,0)); ni = (ni+1) % len(noise)
         screen.blit(tint, (0,0))
         pygame.display.flip()
         clock.tick(30)
 
-    # save bookmark on exit
+    # Save bookmark on exit
     pos = current_elapsed()
     bmarks[key] = {"track": idx, "pos": pos}
     _save_bookmarks(bmarks)
