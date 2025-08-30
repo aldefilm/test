@@ -39,9 +39,14 @@ def _album_key(meta, album_folder):
 
 # ---------- idle (splash -> welcome) until SD detected ----------
 def run_idle_until_sd(greeting="Commander"):
-    # Play splash (hidden VLC) then open our fullscreen
-    play_splash_8s()
+    # 1) Open Pygame first (black background), so the splash returns cleanly to it
     screen, clock = open_fullscreen_on(SCREEN_INDEX)
+    screen.fill((0,0,0)); pygame.display.flip()
+
+    # 2) Play hidden splash ON TOP, then fade into text
+    play_splash_8s()
+    fade_from_black(screen, clock, ms=500)
+
     sw, sh = screen.get_size()
     font = load_font(48)
 
@@ -54,54 +59,51 @@ def run_idle_until_sd(greeting="Commander"):
     tint  = make_tint((sw, sh))
     noise = make_noise_frames((sw, sh))
 
-    # counters
     frame = 0
     letters = 0
     blink = True
     ni = 0
     last_poll = 0.0
+    finished_welcome = False
 
     running = True
     while running:
         for e in pygame.event.get():
             if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-                pygame.quit()
-                return None
+                pygame.quit(); return None
 
         frame += 1
         if letters < len(full_text) and frame % frames_per_letter == 0:
             letters += 1
+            if letters == len(full_text):
+                finished_welcome = True
         if frame % blink_frames == 0:
             blink = not blink
 
-        # poll for SD every 0.5s
-        now = time.time()
-        if now - last_poll >= 0.5:
-            last_poll = now
-            jp = find_album_json()
-            if jp:
-                pygame.quit()
-                return jp
+        # poll for SD ...
+        # (your existing poll code here)
 
         # draw
-        screen.fill(BLACK)
+        screen.fill((0,0,0))
         t1 = renders[letters]
         c1 = (sw // 2, sh // 2 - 60)
-        blit_glow(screen, t1, c1)
+        # halo glow (no bars), then main text
+        blit_glow_halo(screen, t1, c1, radius=4, copies=24, alpha=40)
         screen.blit(t1, t1.get_rect(center=c1))
 
-        if blink:
+        # Only show red AFTER welcome is fully typed
+        if finished_welcome and blink:
             t2 = font.render("Insert Cartridge", True, RED)
             c2 = (sw // 2, sh // 2 + 40)
-            blit_glow(screen, t2, c2, layers=((1.25, 40), (1.5, 20)))
+            blit_glow_halo(screen, t2, c2, radius=4, copies=24, alpha=40)
             screen.blit(t2, t2.get_rect(center=c2))
 
-        screen.blit(scan, (0, 0))
-        screen.blit(noise[ni], (0, 0)); ni = (ni + 1) % len(noise)
-        screen.blit(tint, (0, 0))
-
+        screen.blit(scan, (0,0))
+        screen.blit(noise[ni], (0,0)); ni = (ni+1) % len(noise)
+        screen.blit(tint, (0,0))
         pygame.display.flip()
         clock.tick(30)
+
 
 # ---------- build track list from titles + numbered files ----------
 def pair_titles_with_files(base, main_titles, bonus_titles):
