@@ -1,3 +1,4 @@
+# /home/pi/aurion/aurion_right.py
 import os, time
 import pygame
 from queue import Empty
@@ -12,7 +13,6 @@ RED   = (220,40,40)
 BLACK = (0,0,0)
 
 def idle_until_queue(album_q, greeting="Commander"):
-    """Splash → welcome/insert loop until we receive an album.json path on the queue."""
     screen, clock = open_fullscreen_on(SCREEN_INDEX)
     screen.fill(BLACK); pygame.display.flip()
 
@@ -36,10 +36,9 @@ def idle_until_queue(album_q, greeting="Commander"):
     noise = make_noise_frames((sw, sh))
 
     frame = 0; letters = 0; blink = True; ni = 0
-    finished_welcome = False
 
     while True:
-        # Check for a message from master/left
+        # Check queue from the left process
         if album_q is not None:
             try:
                 jp = album_q.get_nowait()
@@ -49,14 +48,16 @@ def idle_until_queue(album_q, greeting="Commander"):
                 pass
 
         for e in pygame.event.get():
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-                pygame.quit(); return None
+            if e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_ESCAPE:
+                    pygame.quit(); return None
+                elif e.key == pygame.K_d:  # DEV: force local album
+                    pygame.quit()
+                    return os.path.join("/home/pi/aurion/dev_album", "album.json")
 
         frame += 1
         if letters < len(full_text) and frame % frames_per_letter == 0:
             letters += 1
-            if letters == len(full_text):
-                finished_welcome = True
         if frame % blink_frames == 0:
             blink = not blink
 
@@ -64,7 +65,7 @@ def idle_until_queue(album_q, greeting="Commander"):
         t1 = renders[letters]
         screen.blit(t1, t1.get_rect(center=(sw // 2, sh // 2 - 60)))
 
-        if finished_welcome and blink:
+        if letters == len(full_text) and blink:
             t2 = font.render("Insert Cartridge", True, RED)
             screen.blit(t2, t2.get_rect(center=(sw // 2, sh // 2 + 40)))
 
@@ -130,7 +131,6 @@ def run_right_worker(album_q, greeting="Commander"):
         run_cover_ui(jp)
 
 if __name__ == "__main__":
-    # Standalone right screen (no master): falls back to idle forever
     from multiprocessing import Queue
     q = Queue()
     jp = idle_until_queue(q, greeting="Commander")
