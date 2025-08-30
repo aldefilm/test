@@ -3,18 +3,18 @@ import os, json, glob, random, shutil, subprocess
 import pygame
 
 # ----- PATHS -----
-AURION_ROOT = "/home/pi/aurion"
+AURION_ROOT = "/home/aurion"
 ASSETS      = os.path.join(AURION_ROOT, "assets")
-FONT_PATH   = os.path.join(ASSETS, "fonts", "AurionFont.ttf")
+FONT_PATH   = os.path.join(ASSETS, "fonts", "curved-16-segment.otf")
 SPLASH_MP4  = os.path.join(ASSETS, "splash.mp4")
 
-# ----- DISPLAY HELPERS -----
+# ----- DISPLAY -----
 def open_fullscreen_on(display_index="0"):
     """
     Open a fullscreen Pygame window on a specific display.
     Use "0" (left HDMI) or "1" (right HDMI).
     """
-    os.environ.setdefault("SDL_VIDEODRIVER", "x11")  # use "kmsdrm" if you run no desktop
+    os.environ.setdefault("SDL_VIDEODRIVER", "x11")  # use "kmsdrm" if no desktop
     os.environ["SDL_VIDEO_FULLSCREEN_DISPLAY"] = str(display_index)
 
     pygame.init()
@@ -29,7 +29,7 @@ def load_font(size=48):
     except Exception:
         return pygame.font.SysFont(None, size)
 
-# ----- VISUAL OVERLAYS -----
+# ----- SIMPLE OVERLAYS (optional CRT vibe) -----
 def make_scanlines(size):
     w, h = size
     surf = pygame.Surface((w, h), pygame.SRCALPHA)
@@ -53,22 +53,7 @@ def make_noise_frames(size, frames=3, dots=600, alpha=22):
         out.append(n)
     return out
 
-def blit_glow_halo(surface, text_surface, center, radius=4, copies=24, alpha=40):
-    """
-    Halo glow with small offsets (no big rectangle bars).
-    Draws many faint copies around the text perimeter.
-    """
-    cx, cy = center
-    glow = text_surface.copy().convert_alpha()
-    glow.set_alpha(alpha)
-    for i in range(copies):
-        angle = (i / copies) * 6.28318530718  # 2π
-        ox = int(radius * 1.0 * pygame.math.Vector2(1, 0).rotate_rad(angle).x)
-        oy = int(radius * 1.0 * pygame.math.Vector2(1, 0).rotate_rad(angle).y)
-        surface.blit(glow, glow.get_rect(center=(cx + ox, cy + oy)), special_flags=pygame.BLEND_ADD)
-    # main text on top (caller renders it)
-
-# ----- FADE UTILS -----
+# ----- FADE -----
 def fade_from_black(screen, clock, ms=500):
     """Quick fade from black to scene for a smooth post-splash transition."""
     w, h = screen.get_size()
@@ -81,12 +66,11 @@ def fade_from_black(screen, clock, ms=500):
         pygame.display.flip()
         clock.tick(30)
 
-# ----- SPLASH (8s, no VLC UI/OSD) -----
+# ----- SPLASH (8s, hidden VLC/OMX, smooth return) -----
 def play_splash_8s():
     """
-    Plays splash up to 8s using cvlc/omxplayer with no visible UI.
-    Tip: For a seamless look, open your Pygame screen *first* (black),
-    then call this so VLC draws on top and returns to your already-open window.
+    Play splash up to 8s without showing a VLC window/OSD.
+    Call AFTER you've opened your Pygame screen (black background).
     """
     if not os.path.isfile(SPLASH_MP4):
         return
@@ -95,10 +79,10 @@ def play_splash_8s():
         subprocess.run(
             [
                 "cvlc",
-                "--intf", "dummy",           # no VLC UI
+                "--intf", "dummy",            # no VLC UI
                 "--no-osd",
                 "--no-video-title-show",
-                "--video-on-top",            # keeps on top of your black Pygame screen
+                "--video-on-top",             # on top of your black Pygame screen
                 "--fullscreen",
                 "--start-time=0",
                 "--stop-time=8",
