@@ -14,7 +14,7 @@ def open_fullscreen_on(display_index="0"):
     Open a fullscreen Pygame window on a specific display.
     Use "0" (left HDMI) or "1" (right HDMI).
     """
-    os.environ.setdefault("SDL_VIDEODRIVER", "x11")  # use "kmsdrm" if no desktop
+    os.environ.setdefault("SDL_VIDEODRIVER", "x11")  # use "kmsdrm" if no desktop/X
     os.environ["SDL_VIDEO_FULLSCREEN_DISPLAY"] = str(display_index)
 
     pygame.init()
@@ -115,7 +115,6 @@ def play_splash_embedded(screen, clock, stop_seconds=8):
     if not os.path.isfile(SPLASH_MP4):
         return
 
-    # Get X11 window id to embed into
     xid = None
     try:
         info = pygame.display.get_wm_info()
@@ -139,25 +138,31 @@ def play_splash_embedded(screen, clock, stop_seconds=8):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        # keep the window alive & responsive while VLC draws
         t0 = pygame.time.get_ticks()
+        # DO NOT flip while VLC draws; just keep events pumping (prevents flicker)
         while proc.poll() is None:
             for e in pygame.event.get():
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     proc.terminate()
                     return
-            pygame.display.flip()
-            clock.tick(30)
+            clock.tick(60)
             if (pygame.time.get_ticks() - t0) > int((stop_seconds + 0.5) * 1000):
                 break
     else:
-        # Fallback to non-embedded playback
         play_splash_8s()
 
 # ----- SD / ALBUM HELPERS -----
-MOUNT_GUESS = ["/media/pi/*", "/media/*/*", "/mnt/*"]
+# Also check /mnt/cart for your SPI-mounted cartridge later
+MOUNT_GUESS = ["/media/pi/*", "/media/*/*", "/mnt/*", "/mnt/cart", "/home/pi/aurion/dev_album"]
 
 def find_album_json():
+    # Allow explicit dev override via env var
+    dev = os.environ.get("AURION_DEV_ALBUM")
+    if dev:
+        jp = os.path.join(dev, "album.json")
+        if os.path.isfile(jp):
+            return jp
+    # Search mounts + dev folder
     for pat in MOUNT_GUESS:
         for mount in glob.glob(pat):
             jp = os.path.join(mount, "album.json")
